@@ -8,84 +8,74 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static("public"));
-
 const PORT = process.env.PORT || 3000;
-const rooms = new Map();
-
 const MIN_PLAYERS = 6;
 const MAX_PLAYERS = 15;
 
+app.use(express.static("public"));
+
+const rooms = new Map();
+const playerRooms = new Map();
+
 function makeCode() {
-  return crypto.randomBytes(3).toString("hex").toUpperCase();
+  let code;
+
+  do {
+    code = crypto.randomBytes(3).toString("hex").toUpperCase();
+  } while (rooms.has(code));
+
+  return code;
 }
 
-function shuffle(items) {
-  return [...items].sort(() => Math.random() - 0.5);
-}
-
-function publicRoom(room) {
-  return {
+function sendRoomUpdate(room) {
+  io.to(room.code).emit("room:update", {
     code: room.code,
-    hostId: room.hostId,
     phase: room.phase,
     players: room.players.map(player => ({
       id: player.id,
       name: player.name,
       color: player.color,
       x: player.x,
-      y: player.y,
-      alive: player.alive
+      y: player.y
     }))
-  };
+  });
 }
 
-function updateRoom(room) {
-  io.to(room.code).emit("room:update", publicRoom(room));
-}
+function removePlayer(socket) {
+  const code = playerRooms.get(socket.id);
+  if (!code) return;
 
-function findRoom(socketId) {
-  return [...rooms.values()].find(room =>
-    room.players.some(player => player.id === socketId)
+  const room = rooms.get(code);
+  playerRooms.delete(socket.id);
+
+  if (!room) return;
+
+  room.players = room.players.filter(
+    player => player.id !== socket.id
   );
-}
 
-function startGame(room) {
-  const shuffled = shuffle(room.players);
-  const impostorCount = room.players.length >= 12 ? 3 :
-    room.players.length >= 8 ? 2 : 1;
+  if (room.players.length === 0) {
+    rooms.delete(code);
+    return;
+  }
 
-  shuffled.forEach((player, index) => {
-    player.role = index < impostorCount ? "impostor" : "crewmate";
-    player.tasksDone = 0;
-  });
+  if (room.hostId === socket.id) {
+    room.hostId = room.players[0].id;
+  }
 
-  room.phase = "playing";
-  room.startedAt = Date.now();
-
-  room.players.forEach(player => {
-    io.to(player.id).emit("game:private", {
-      role: player.role,
-      tasks: player.role === "crewmate" ? [
-        "Nối dây điện",
-        "Sửa máy phát",
-        "Tải dữ liệu",
-        "Nạp năng lượng"
-      ] : []
-    });
-  });
-
-  updateRoom(room);
+  sendRoomUpdate(room);
 }
 
 io.on("connection", socket => {
-  socket.on("room:create", ({ name }) => {
-    if (!name || !name.trim()) {
-      return socket.emit("error:msg", "Bạn hãy nhập tên nhé!");
+  console.log("Người chơi kết nối:", socket.id);
+
+  socket.on("room:create", data => {
+    if (playerRooms.has(socket.id)) {
+      socket.emit("error:msg", "Bạn đang ở trong một phòng rồi!");
+      return;
     }
 
-    let code = makeCode();
-    while (rooms.has(code)) code = makeCode();
+    const code = makeCode();
 
     const room = {
       code,
@@ -93,148 +83,192 @@ io.on("connection", socket => {
       phase: "lobby",
       players: [{
         id: socket.id,
-        name: name.trim().slice(0, 18),
-        color: "pink",
-        x: 300,
-        y: 250,
-        alive: true
+        name: String(data.name || "Người chơi").slice(0, 16),
+        color: data.color || "#82c9f4",
+        x: 100,
+        y: 100,
+        tasksCompleted: 0,
+        role: "crewmate"
       }]
     };
 
     rooms.set(code, room);
+    playerRooms.set(socket.id, code);
     socket.join(code);
-    socket.emit("room:joined", { code, host: true });
-    updateRoom(room);
+
+    socket.emit("room:joined", {
+      code,
+      host: true
+    });
+
+    sendRoomUpdate(room);
   });
 
-  socket.on("room:join", ({ code, name, color }) => {
-    const room = rooms.get(String(code || "").toUpperCase());
+  socket.on("room:join", data => {
+    if (playerRooms.has(socket.id)) {
+      socket.emit("error:msg", "Bạn đang ở trong một phòng rồi!");
+      return;
+    }
 
-    if (!room) return socket.emit("error:msg", "Không tìm thấy phòng!");
-    if (room.phase !== "lobby") return socket.emit("error:msg", "Ván chơi đã bắt đầu!");
-    if (room.players.length >= MAX_PLAYERS) return socket.emit("error:msg", "Phòng đã đủ 15 người!");
-    if (!name || !name.trim()) return socket.emit("error:msg", "Bạn hãy nhập tên!");
+    const code = String(data.code || "").toUpperCase();
+    const room = rooms.get(code);
 
-    if (room.players.some(p => p.name.toLowerCase() === name.trim().toLowerCase())) {
-      return socket.emit("error:msg", "Tên này đã có người sử dụng!");
+    if (!room) {
+      socket.emit("error:msg", "Không tìm thấy phòng này!");
+      return;
+    }
+
+    if (room.phase !== "lobby") {
+      socket.emit("error:msg", "Trận đấu đã bắt đầu!");
+      return;
+    }
+
+    if (room.players.length >= MAX_PLAYERS) {
+      socket.emit("error:msg", "Phòng đã đủ 15 người!");
+      return;
     }
 
     room.players.push({
       id: socket.id,
-      name: name.trim().slice(0, 18),
-      color: color || "blue",
-      x: 300 + Math.random() * 100,
-      y: 250 + Math.random() * 100,
-      alive: true
+      name: String(data.name || "Người chơi").slice(0, 16),
+      color: data.color || "#82c9f4",
+      x: 100 + Math.random() * 100,
+      y: 100 + Math.random() * 100,
+      tasksCompleted: 0,
+      role: "crewmate"
     });
 
-    socket.join(room.code);
-    socket.emit("room:joined", { code: room.code, host: false });
-    updateRoom(room);
+    playerRooms.set(socket.id, code);
+    socket.join(code);
+
+    socket.emit("room:joined", {
+      code,
+      host: false
+    });
+
+    sendRoomUpdate(room);
   });
 
   socket.on("game:start", () => {
-    const room = findRoom(socket.id);
+    const code = playerRooms.get(socket.id);
+    const room = rooms.get(code);
+
     if (!room || room.hostId !== socket.id) return;
 
     if (room.players.length < MIN_PLAYERS) {
-      return socket.emit("error:msg", "Cần ít nhất 6 người để bắt đầu!");
+      socket.emit(
+        "error:msg",
+        `Cần ít nhất ${MIN_PLAYERS} người để bắt đầu!`
+      );
+      return;
     }
 
-    if (room.phase !== "lobby") return;
-    startGame(room);
+    if (room.players.length > MAX_PLAYERS) return;
+
+    room.phase = "playing";
+
+    const shuffled = [...room.players].sort(
+      () => Math.random() - 0.5
+    );
+
+    let impostorCount = 1;
+
+    if (room.players.length >= 8) impostorCount = 2;
+    if (room.players.length >= 12) impostorCount = 3;
+
+    shuffled.forEach((player, index) => {
+      player.role = index < impostorCount
+        ? "impostor"
+        : "crewmate";
+    });
+
+    room.players.forEach(player => {
+      const tasks = [
+        "🔋 Sạc năng lượng",
+        "🪐 Kiểm tra bản đồ sao",
+        "🧹 Dọn bụi thiên thạch",
+        "📡 Sửa ăng-ten liên lạc"
+      ];
+
+      io.to(player.id).emit("game:private", {
+        role: player.role,
+        tasks: player.role === "impostor" ? [] : tasks
+      });
+    });
+
+    io.to(code).emit("game:started", {
+      players: room.players.map(player => ({
+        id: player.id,
+        name: player.name,
+        color: player.color,
+        x: player.x,
+        y: player.y
+      }))
+    });
+
+    sendRoomUpdate(room);
   });
 
-  socket.on("player:move", ({ x, y }) => {
-    const room = findRoom(socket.id);
+  socket.on("player:move", data => {
+    const code = playerRooms.get(socket.id);
+    const room = rooms.get(code);
+
     if (!room || room.phase !== "playing") return;
 
-    const player = room.players.find(p => p.id === socket.id);
-    if (!player || !player.alive) return;
+    const player = room.players.find(
+      item => item.id === socket.id
+    );
 
-    player.x = Math.max(30, Math.min(970, Number(x) || player.x));
-    player.y = Math.max(30, Math.min(670, Number(y) || player.y));
+    if (!player) return;
 
-    socket.to(room.code).emit("player:moved", {
-      id: player.id,
+    player.x = Math.max(0, Math.min(1000, Number(data.x) || 0));
+    player.y = Math.max(0, Math.min(1000, Number(data.y) || 0));
+
+    socket.to(code).emit("player:moved", {
+      id: socket.id,
       x: player.x,
       y: player.y
     });
   });
 
   socket.on("task:complete", () => {
-    const room = findRoom(socket.id);
+    const code = playerRooms.get(socket.id);
+    const room = rooms.get(code);
+
     if (!room || room.phase !== "playing") return;
 
-    const player = room.players.find(p => p.id === socket.id);
+    const player = room.players.find(
+      item => item.id === socket.id
+    );
+
     if (!player || player.role !== "crewmate") return;
 
-    player.tasksDone++;
-    socket.emit("task:progress", player.tasksDone);
+    player.tasksCompleted++;
+
+    socket.emit(
+      "task:progress",
+      player.tasksCompleted
+    );
   });
 
   socket.on("meeting:call", () => {
-    const room = findRoom(socket.id);
+    const code = playerRooms.get(socket.id);
+    const room = rooms.get(code);
+
     if (!room || room.phase !== "playing") return;
 
     room.phase = "meeting";
-    io.to(room.code).emit("meeting:started");
-    updateRoom(room);
-  });
 
-  socket.on("meeting:vote", ({ playerId }) => {
-    const room = findRoom(socket.id);
-    if (!room || room.phase !== "meeting") return;
-
-    const voter = room.players.find(p => p.id === socket.id);
-    const target = room.players.find(p => p.id === playerId);
-
-    if (!voter || !voter.alive || !target || !target.alive) return;
-
-    if (!room.votes) room.votes = {};
-    room.votes[socket.id] = playerId;
-
-    if (Object.keys(room.votes).length >= room.players.filter(p => p.alive).length) {
-      const counts = {};
-      Object.values(room.votes).forEach(id => {
-        counts[id] = (counts[id] || 0) + 1;
-      });
-
-      const max = Math.max(...Object.values(counts));
-      const leaders = Object.keys(counts).filter(id => counts[id] === max);
-
-      if (leaders.length === 1) {
-        const eliminated = room.players.find(p => p.id === leaders[0]);
-        if (eliminated) eliminated.alive = false;
-      }
-
-      room.phase = "playing";
-      room.votes = {};
-      updateRoom(room);
-    }
+    io.to(code).emit("meeting:started");
+    sendRoomUpdate(room);
   });
 
   socket.on("disconnect", () => {
-    const room = findRoom(socket.id);
-    if (!room) return;
-
-    if (room.phase === "lobby") {
-      room.players = room.players.filter(p => p.id !== socket.id);
-
-      if (room.players.length === 0) {
-        rooms.delete(room.code);
-      } else {
-        if (room.hostId === socket.id) room.hostId = room.players[0].id;
-        updateRoom(room);
-      }
-    }
+    console.log("Người chơi rời đi:", socket.id);
+    removePlayer(socket);
   });
 });
 
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
-});
-
 server.listen(PORT, () => {
-  console.log("AI LA KE PHAN BOI is running on port " + PORT);
+  console.log(`Game đang chạy tại cổng ${PORT}`);
 });
