@@ -10,18 +10,18 @@ let players = [];
 
 const $ = id => document.getElementById(id);
 
-function showScreen(screenId) {
-  ["home", "lobby", "game"].forEach(id => {
-    $(id).classList.add("hidden");
+function showScreen(id) {
+  ["home", "lobby", "game"].forEach(name => {
+    $(name).classList.add("hidden");
   });
-  $(screenId).classList.remove("hidden");
+  $(id).classList.remove("hidden");
 }
 
 function notify(text) {
   alert(text);
 }
 
-// Chọn màu nhân vật
+// Chọn màu
 document.querySelectorAll("#colors button").forEach(button => {
   button.addEventListener("click", () => {
     myColor = button.dataset.color;
@@ -32,26 +32,26 @@ document.querySelectorAll("#colors button").forEach(button => {
 
     button.classList.add("selected");
 
-    const character = document.querySelector("#preview .character");
-    if (character) {
-      character.className = "character " + myColor;
+    const preview = document.querySelector("#preview .character");
+    if (preview) {
+      preview.className = "character " + myColor;
     }
   });
 });
 
-// Lấy thông tin người chơi
+// Lấy tên người chơi
 function getPlayerInfo() {
   myName = $("playerName").value.trim();
 
   if (!myName) {
-    notify("Bạn hãy nhập tên nhân vật nhé!");
+    notify("Bạn hãy nhập tên nhân vật trước nhé!");
     return false;
   }
 
   return true;
 }
 
-// Tạo phòng
+// NÚT TẠO PHÒNG
 $("createRoom").addEventListener("click", () => {
   if (!getPlayerInfo()) return;
 
@@ -61,7 +61,7 @@ $("createRoom").addEventListener("click", () => {
   });
 });
 
-// Tham gia phòng
+// NÚT THAM GIA PHÒNG
 $("joinRoom").addEventListener("click", () => {
   if (!getPlayerInfo()) return;
 
@@ -79,10 +79,10 @@ $("joinRoom").addEventListener("click", () => {
   });
 });
 
-// Khi vào phòng
+// Khi máy chủ xác nhận vào phòng
 socket.on("room:joined", data => {
   roomCode = data.code;
-  isHost = data.host === true;
+  isHost = data.host;
 
   $("codeDisplay").textContent = roomCode;
   $("startGame").classList.toggle("hidden", !isHost);
@@ -90,11 +90,11 @@ socket.on("room:joined", data => {
   showScreen("lobby");
 });
 
-// Cập nhật phòng
+// Cập nhật danh sách người chơi
 socket.on("room:update", data => {
   players = data.players || [];
 
-  $("codeDisplay").textContent = data.code;
+  $("codeDisplay").textContent = data.code || roomCode;
 
   const list = $("playerList");
   list.innerHTML = "";
@@ -103,7 +103,7 @@ socket.on("room:update", data => {
     const item = document.createElement("div");
     item.className = "player-item";
     item.textContent = "🧑 " + player.name;
-    item.style.borderLeft = "8px solid " + player.color;
+    item.style.borderLeft = "7px solid " + player.color;
     list.appendChild(item);
   });
 
@@ -122,9 +122,9 @@ socket.on("room:update", data => {
 $("copyCode").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(roomCode);
-    notify("Đã sao chép mã phòng: " + roomCode);
+    notify("Đã sao chép mã phòng!");
   } catch {
-    notify("Mã phòng của bạn: " + roomCode);
+    notify("Mã phòng: " + roomCode);
   }
 });
 
@@ -161,11 +161,6 @@ socket.on("game:private", data => {
 
   $("taskCount").textContent =
     "Nhiệm vụ: " + (data.tasks || []).length;
-
-  $("gameMessage").textContent =
-    myRole === "impostor"
-      ? "Hãy bí mật tìm cơ hội phá hoại! 😈"
-      : "Hoàn thành nhiệm vụ và tìm kẻ phản bội!";
 });
 
 // Di chuyển nhân vật
@@ -194,7 +189,6 @@ function move(dx, dy) {
   socket.emit("player:move", { x, y });
 }
 
-// Bàn phím máy tính
 document.addEventListener("keydown", event => {
   if ($("game").classList.contains("hidden")) return;
 
@@ -206,7 +200,7 @@ document.addEventListener("keydown", event => {
   if (key === "d" || key === "arrowright") move(12, 0);
 });
 
-// Nhận vị trí người chơi khác
+// Cập nhật vị trí người chơi
 socket.on("player:moved", data => {
   const character = document.querySelector(
     `[data-player-id="${data.id}"]`
@@ -228,10 +222,8 @@ $("taskButton").addEventListener("click", () => {
   socket.emit("task:complete");
 });
 
-// Cập nhật nhiệm vụ
 socket.on("task:progress", count => {
-  $("taskCount").textContent = "Nhiệm vụ: " + count;
-  $("gameMessage").textContent = "🎉 Hoàn thành một nhiệm vụ!";
+  $("taskCount").textContent = "Nhiệm vụ hoàn thành: " + count;
 });
 
 // Họp khẩn cấp
@@ -240,15 +232,14 @@ $("meetingButton").addEventListener("click", () => {
 });
 
 socket.on("meeting:started", () => {
-  notify("🚨 HỌP KHẨN CẤP! Hãy thảo luận xem ai là kẻ phản bội!");
+  notify("🚨 Cuộc họp khẩn cấp bắt đầu!");
 });
 
-// Thông báo lỗi từ máy chủ
+// Báo lỗi
 socket.on("error:msg", text => {
   notify(text);
 });
 
 socket.on("connect_error", () => {
-  notify("Không thể kết nối máy chủ. Hãy tải lại trang nhé!");
+  notify("Không kết nối được máy chủ. Hãy tải lại trang!");
 });
-
