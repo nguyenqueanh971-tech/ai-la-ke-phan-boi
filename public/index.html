@@ -1,0 +1,91 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI LÀ KẺ PHẢN BỘI?</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="logo">🚀 SPACE MATES</div>
+      <h1>AI LÀ KẺ PHẢN BỘI<span>?</span></h1>
+      <p>Phi hành đoàn vui nhộn – Bí mật không gian</p>
+    </header>
+
+    <section class="card" id="home">
+      <h2>🎮 Vào cuộc chơi!</h2>
+
+      <label>Tên nhân vật</label>
+      <input id="playerName" maxlength="18" placeholder="Nhập tên của bạn">
+
+      <label>Chọn màu nhân vật</label>
+      <div class="colors" id="colors">
+        <button data-color="pink" class="pink selected"></button>
+        <button data-color="blue" class="blue"></button>
+        <button data-color="yellow" class="yellow"></button>
+        <button data-color="green" class="green"></button>
+        <button data-color="purple" class="purple"></button>
+        <button data-color="orange" class="orange"></button>
+        <button data-color="mint" class="mint"></button>
+        <button data-color="red" class="red"></button>
+      </div>
+
+      <div class="character-preview" id="preview">
+        <div class="character pink">
+          <div class="face">^ᴗ^</div>
+          <div class="feet"><i></i><i></i></div>
+        </div>
+        <p>Đây là nhân vật của bạn!</p>
+      </div>
+
+      <button class="main-button" id="createRoom">✨ Tạo phòng</button>
+
+      <div class="join">
+        <input id="roomCode" placeholder="Nhập mã phòng">
+        <button id="joinRoom">Tham gia</button>
+      </div>
+
+      <p class="note">6–15 người chơi · Chơi cùng bạn bè</p>
+    </section>
+
+    <section class="card hidden" id="lobby">
+      <h2>🏠 Phòng chờ</h2>
+      <p>Mã phòng của bạn:</p>
+      <div class="room-code" id="codeDisplay"></div>
+      <button id="copyCode">📋 Sao chép mã phòng</button>
+
+      <h3>Phi hành đoàn</h3>
+      <div id="playerList" class="player-list"></div>
+
+      <button class="main-button hidden" id="startGame">
+        🚀 Bắt đầu game
+      </button>
+      <p id="waiting">Đang chờ mọi người tham gia...</p>
+    </section>
+
+    <section class="card hidden" id="game">
+      <h2>🪐 Phi thuyền không gian</h2>
+      <div class="game-info">
+        <span id="role">Vai trò: Đang tải...</span>
+        <span id="taskCount">Tasks: 0</span>
+      </div>
+      <div id="gameMap" class="game-map">
+        <div class="room-label">🚀 SPACE STATION</div>
+        <div id="characters"></div>
+        <button id="taskButton">🔧 Làm nhiệm vụ</button>
+        <button id="meetingButton">🚨 Họp khẩn cấp</button>
+      </div>
+      <p id="gameMessage">Chào mừng lên phi thuyền!</p>
+      <div id="taskArea"></div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
