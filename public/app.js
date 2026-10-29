@@ -1,247 +1,254 @@
 
 const socket = io();
 
-let myName = '';
-let myColor = '#82c9f4';
-let roomCode = '';
-let myRole = 'crew';
-let myTasks = [];
+let myName = "";
+let myColor = "pink";
+let roomCode = "";
+let isHost = false;
+let myRole = "crewmate";
 let players = [];
-let selectedVote = null;
 
-const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id);
 
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(screen => {
-    screen.classList.remove('active');
+function showScreen(screenId) {
+  ["home", "lobby", "game"].forEach(id => {
+    $(id).classList.add("hidden");
   });
-  $(id)?.classList.add('active');
+  $(screenId).classList.remove("hidden");
 }
 
-function message(text) {
+function notify(text) {
   alert(text);
 }
 
-function chooseColor(color, element) {
-  myColor = color;
-  document.querySelectorAll('.color-dot').forEach(dot => {
-    dot.classList.remove('selected');
+// Chọn màu nhân vật
+document.querySelectorAll("#colors button").forEach(button => {
+  button.addEventListener("click", () => {
+    myColor = button.dataset.color;
+
+    document.querySelectorAll("#colors button").forEach(b =>
+      b.classList.remove("selected")
+    );
+
+    button.classList.add("selected");
+
+    const character = document.querySelector("#preview .character");
+    if (character) {
+      character.className = "character " + myColor;
+    }
   });
-  element.classList.add('selected');
+});
 
-  const character = $('character-preview');
-  if (character) character.style.background = color;
-}
-
+// Lấy thông tin người chơi
 function getPlayerInfo() {
-  myName = $('player-name').value.trim();
+  myName = $("playerName").value.trim();
 
   if (!myName) {
-    message('Bạn hãy nhập tên nhân vật trước nhé!');
+    notify("Bạn hãy nhập tên nhân vật nhé!");
     return false;
   }
 
   return true;
 }
 
-function createRoom() {
+// Tạo phòng
+$("createRoom").addEventListener("click", () => {
   if (!getPlayerInfo()) return;
 
-  socket.emit('room:create', {
+  socket.emit("room:create", {
     name: myName,
     color: myColor
   });
-}
+});
 
-function joinRoom() {
+// Tham gia phòng
+$("joinRoom").addEventListener("click", () => {
   if (!getPlayerInfo()) return;
 
-  const code = $('join-code').value.trim().toUpperCase();
+  const code = $("roomCode").value.trim().toUpperCase();
 
   if (!code) {
-    message('Bạn hãy nhập mã phòng!');
+    notify("Bạn hãy nhập mã phòng!");
     return;
   }
 
-  socket.emit('room:join', {
+  socket.emit("room:join", {
     code,
     name: myName,
     color: myColor
   });
-}
+});
 
-function enterLobby(data) {
+// Khi vào phòng
+socket.on("room:joined", data => {
   roomCode = data.code;
+  isHost = data.host === true;
+
+  $("codeDisplay").textContent = roomCode;
+  $("startGame").classList.toggle("hidden", !isHost);
+
+  showScreen("lobby");
+});
+
+// Cập nhật phòng
+socket.on("room:update", data => {
   players = data.players || [];
 
-  $('room-code').textContent = roomCode;
-  showScreen('lobby-screen');
-  renderPlayers();
-}
+  $("codeDisplay").textContent = data.code;
 
-function renderPlayers() {
-  const list = $('player-list');
-  if (!list) return;
-
-  list.innerHTML = '';
+  const list = $("playerList");
+  list.innerHTML = "";
 
   players.forEach(player => {
-    const item = document.createElement('div');
-    item.className = 'player-item';
-
-    const dot = document.createElement('span');
-    dot.style.display = 'inline-block';
-    dot.style.width = '15px';
-    dot.style.height = '15px';
-    dot.style.borderRadius = '50%';
-    dot.style.background = player.color || '#82c9f4';
-    dot.style.marginRight = '9px';
-
-    item.appendChild(dot);
-    item.appendChild(document.createTextNode(player.name));
-
+    const item = document.createElement("div");
+    item.className = "player-item";
+    item.textContent = "🧑 " + player.name;
+    item.style.borderLeft = "8px solid " + player.color;
     list.appendChild(item);
   });
-}
 
-function startGame() {
-  socket.emit('game:start', { code: roomCode });
-}
+  $("waiting").textContent =
+    `Đang có ${players.length}/15 người trong phòng`;
 
-function renderGamePlayers() {
-  const map = $('map');
-  if (!map) return;
+  if (data.phase === "playing" || data.phase === "meeting") {
+    showScreen("game");
+    renderCharacters();
+  } else {
+    showScreen("lobby");
+  }
+});
 
-  map.querySelectorAll('.game-character').forEach(el => el.remove());
+// Sao chép mã phòng
+$("copyCode").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(roomCode);
+    notify("Đã sao chép mã phòng: " + roomCode);
+  } catch {
+    notify("Mã phòng của bạn: " + roomCode);
+  }
+});
+
+// Bắt đầu game
+$("startGame").addEventListener("click", () => {
+  socket.emit("game:start");
+});
+
+// Hiển thị nhân vật
+function renderCharacters() {
+  const container = $("characters");
+  container.innerHTML = "";
 
   players.forEach(player => {
-    const character = document.createElement('div');
-    character.className = 'game-character';
+    const character = document.createElement("div");
+    character.className = "game-character";
     character.dataset.playerId = player.id;
-    character.style.background = player.color || '#82c9f4';
-    character.style.left = `${player.x || 50}px`;
-    character.style.top = `${player.y || 50}px`;
-    map.appendChild(character);
+    character.textContent = "•ᴗ•";
+    character.style.background = player.color;
+    character.style.left = (player.x || 100) + "px";
+    character.style.top = (player.y || 100) + "px";
+    container.appendChild(character);
   });
 }
 
-function showGame(data) {
-  players = data.players || players;
-  showScreen('game-screen');
-  renderGamePlayers();
-}
-
-function updateRole(data) {
+// Nhận vai trò bí mật
+socket.on("game:private", data => {
   myRole = data.role;
-  myTasks = data.tasks || [];
 
-  const roleText = $('my-role');
-  if (roleText) {
-    roleText.textContent =
-      myRole === 'impostor'
-        ? '🕵️ Bạn là KẺ PHẢN BỘI!'
-        : '😊 Bạn là thành viên phi hành đoàn!';
-  }
+  $("role").textContent =
+    myRole === "impostor"
+      ? "😈 Bạn là KẺ PHẢN BỘI!"
+      : "😊 Bạn là thành viên phi hành đoàn!";
 
-  renderTasks();
-}
+  $("taskCount").textContent =
+    "Nhiệm vụ: " + (data.tasks || []).length;
 
-function renderTasks() {
-  const list = $('task-list');
-  if (!list) return;
+  $("gameMessage").textContent =
+    myRole === "impostor"
+      ? "Hãy bí mật tìm cơ hội phá hoại! 😈"
+      : "Hoàn thành nhiệm vụ và tìm kẻ phản bội!";
+});
 
-  list.innerHTML = '';
-
-  myTasks.forEach((task, index) => {
-    const item = document.createElement('li');
-    item.textContent = task;
-    list.appendChild(item);
-  });
-}
-
-function completeTask() {
-  if (myRole === 'impostor') {
-    message('Kẻ phản bội không cần làm nhiệm vụ đâu! 😈');
-    return;
-  }
-
-  socket.emit('task:complete', { code: roomCode });
-}
-
-function callMeeting() {
-  socket.emit('meeting:call', { code: roomCode });
-}
-
-function moveCharacter(dx, dy) {
-  const map = $('map');
-  if (!map) return;
-
-  const myCharacter = map.querySelector(
+// Di chuyển nhân vật
+function move(dx, dy) {
+  const character = document.querySelector(
     `[data-player-id="${socket.id}"]`
   );
 
-  if (!myCharacter) return;
+  if (!character) return;
 
-  const maxX = map.clientWidth - 45;
-  const maxY = map.clientHeight - 45;
+  const map = $("gameMap");
 
-  const x = Math.max(0, Math.min(maxX, myCharacter.offsetLeft + dx));
-  const y = Math.max(0, Math.min(maxY, myCharacter.offsetTop + dy));
+  const x = Math.max(30, Math.min(
+    map.clientWidth - 50,
+    character.offsetLeft + dx
+  ));
 
-  socket.emit('player:move', { x, y });
+  const y = Math.max(30, Math.min(
+    map.clientHeight - 50,
+    character.offsetTop + dy
+  ));
+
+  character.style.left = x + "px";
+  character.style.top = y + "px";
+
+  socket.emit("player:move", { x, y });
 }
 
-document.addEventListener('keydown', event => {
-  if (!$('game-screen')?.classList.contains('active')) return;
+// Bàn phím máy tính
+document.addEventListener("keydown", event => {
+  if ($("game").classList.contains("hidden")) return;
 
   const key = event.key.toLowerCase();
 
-  if (key === 'arrowup' || key === 'w') moveCharacter(0, -12);
-  if (key === 'arrowdown' || key === 's') moveCharacter(0, 12);
-  if (key === 'arrowleft' || key === 'a') moveCharacter(-12, 0);
-  if (key === 'arrowright' || key === 'd') moveCharacter(12, 0);
+  if (key === "w" || key === "arrowup") move(0, -12);
+  if (key === "s" || key === "arrowdown") move(0, 12);
+  if (key === "a" || key === "arrowleft") move(-12, 0);
+  if (key === "d" || key === "arrowright") move(12, 0);
 });
 
-socket.on('room:created', enterLobby);
-socket.on('room:joined', enterLobby);
-
-socket.on('room:updated', data => {
-  players = data.players || [];
-  renderPlayers();
-});
-
-socket.on('game:started', showGame);
-socket.on('game:private', updateRole);
-
-socket.on('player:moved', data => {
-  const player = players.find(p => p.id === data.id);
-  if (player) {
-    player.x = data.x;
-    player.y = data.y;
-  }
-
+// Nhận vị trí người chơi khác
+socket.on("player:moved", data => {
   const character = document.querySelector(
     `[data-player-id="${data.id}"]`
   );
 
   if (character) {
-    character.style.left = `${data.x}px`;
-    character.style.top = `${data.y}px`;
+    character.style.left = data.x + "px";
+    character.style.top = data.y + "px";
   }
 });
 
-socket.on('task:progress', data => {
-  message(`Nhiệm vụ đã hoàn thành! 🎉 (${data.completed}/${data.total})`);
+// Làm nhiệm vụ
+$("taskButton").addEventListener("click", () => {
+  if (myRole === "impostor") {
+    notify("Bạn là kẻ phản bội, không cần làm nhiệm vụ! 😈");
+    return;
+  }
+
+  socket.emit("task:complete");
 });
 
-socket.on('meeting:started', () => {
-  message('🚨 Cuộc họp khẩn cấp bắt đầu! Hãy tìm kẻ phản bội!');
+// Cập nhật nhiệm vụ
+socket.on("task:progress", count => {
+  $("taskCount").textContent = "Nhiệm vụ: " + count;
+  $("gameMessage").textContent = "🎉 Hoàn thành một nhiệm vụ!";
 });
 
-socket.on('room:error', data => {
-  message(data.message || 'Có lỗi xảy ra. Hãy thử lại nhé!');
+// Họp khẩn cấp
+$("meetingButton").addEventListener("click", () => {
+  socket.emit("meeting:call");
 });
 
-socket.on('connect_error', () => {
-  message('Không kết nối được máy chủ. Hãy thử tải lại trang.');
+socket.on("meeting:started", () => {
+  notify("🚨 HỌP KHẨN CẤP! Hãy thảo luận xem ai là kẻ phản bội!");
 });
+
+// Thông báo lỗi từ máy chủ
+socket.on("error:msg", text => {
+  notify(text);
+});
+
+socket.on("connect_error", () => {
+  notify("Không thể kết nối máy chủ. Hãy tải lại trang nhé!");
+});
+
