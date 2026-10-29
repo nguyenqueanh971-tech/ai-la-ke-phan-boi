@@ -243,3 +243,37 @@ socket.on("error:msg", text => {
 socket.on("connect_error", () => {
   notify("Không kết nối được máy chủ. Hãy tải lại trang!");
 });
+
+// FIX: Kết nối nút tham gia phòng
+const joinButton = document.getElementById("joinRoom");
+
+joinButton.onclick = function () {
+  const name = document.getElementById("playerName").value.trim();
+  const code = document.getElementById("roomCode").value.trim().toUpperCase();
+
+  if (!name) {
+    alert("Bạn hãy nhập tên nhân vật!");
+    return;
+  }
+
+  if (!code) {
+    alert("Bạn hãy nhập mã phòng!");
+    return;
+  }
+
+  if (!socket.connected) {
+    alert("Đang mất kết nối máy chủ. Hãy tải lại trang!");
+    return;
+  }
+
+  socket.emit("room:join", {
+    name: name,
+    code: code,
+    color: "blue"
+  });
+};
+
+// Hiển thị lỗi nếu mã phòng không đúng
+socket.on("error:msg", function (text) {
+  alert(text);
+});
